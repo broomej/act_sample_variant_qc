@@ -1,0 +1,90 @@
+---
+title: "QC Report: ACT1 & and ACT3 NHW Genotyped SNPs"
+author:
+- name: Jai Broome
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    keep_md: yes
+---
+
+```{r library, message = FALSE}
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(purrr)
+library(knitr)
+input <- snakemake@input
+params <- snakemake@params
+cohorts <- params$cohorts
+```
+
+```{r data}
+sampmet <- readRDS(input$sampmet)
+samp_keep <- readRDS(input$samp_keep)
+varmet <- readRDS(input$varmet)
+var_keep <- readRDS(input$var_keep)
+```
+
+## Sample QC
+
+We apply filters based on four criteria:
+
+* Missingness
+* Excess heterozygosity
+* Geno/pheno sex mismatch, calculated with `plink --check-sex`
+* Phenotype availability
+
+Phenotype availability practically has the largest effect, but we've known that
+only a small subset of samples have BPS scores measured. Check the config for
+exclusion thresholds for missingness and heterozygosity (we filter out samples
+where the heterozygosity is a certain number of SDs away from mean, not an
+absolute threshold).
+
+```{r samp_qc_summary}
+summarize_samp_counts <- function(x) {
+    c(
+        total = nrow(x),
+        ms_rm = sum(x$ms_rm, na.rm = TRUE),
+        htz_rm = sum(x$htz_rm, na.rm = TRUE),
+        sexcheck_rm = sum(x$sexcheck_rm, na.rm = TRUE),
+        total_excluded = sum(!x$pass, na.rm = TRUE)
+    )
+}
+
+print_samp_summary <- function(x) {
+    summ_out <- data.frame(merged = summarize_samp_counts(x))
+    for (i in cohorts) {
+        summ_out[[i]] <- summarize_samp_counts(filter(x, cohort == i))
+    }
+    kable(summ_out) %>% print()
+}
+```
+
+Sample QC summary: all samples
+
+```{r samp_qc_summary_all, results="asis"}
+print_samp_summary(sampmet)
+```
+
+Sample QC summary: NP samples only
+
+```{r samp_qc_summary_np, results="asis"}
+filter(sampmet, np_measured) %>%
+    print_samp_summary()
+```
+
+## Variant QC
+
+Summary of variants kept/excluded by missingness or HWE
+
+**ACT1**
+
+```{r a1_variant_summary}
+select(varmet$ACT1, hwe_rm, ms_rm) %>% table(useNA = "ifany")
+```
+
+**ACT3 NHW**
+```{r a3_nhw_variant_summary}
+select(varmet$ACT3_NHW, hwe_rm, ms_rm) %>% table(useNA = "ifany")
+```
