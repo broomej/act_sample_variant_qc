@@ -1,16 +1,27 @@
-RESDIR = "results/ACT/act_sample_variant_qc"
-LOGDIR = "logs/ACT/act_sample_variant_qc"
-TEMPDIR = "temp/ACT/act_sample_variant_qc"
+module serpent:
+    snakefile: "/home/jb/development/serpent/workflow/Snakefile"
+
+BFILES={k: f"{config['data']['act']}/{k}/CleanedGenotypes/{v}" for k, v in config["bfiles"].items()}
+MARGIN_MAP = {
+    "var": "by.variant",
+    "samp": "by.sample"
+}
+MARGIN = list(MARGIN_MAP.keys())
+wildcard_constraints:
+    cohort="|".join(list(BFILES.keys())),
+    margin="|".join(MARGIN),
+
+
 
 rule check_sex:
-    container: PLINK_IMG
+    container: config["images"]["plink"]
     input:
         bed=lambda wildcards: f"{BFILES[wildcards.cohort]}.bed",
         bim=lambda wildcards: f"{BFILES[wildcards.cohort]}.bim",
         fam=lambda wildcards: f"{BFILES[wildcards.cohort]}.fam",
     output:
-        sexcheck=temp(f"{TEMPDIR}/{{cohort}}/sexcheck.txt"),
-    log: f"{LOGDIR}/check-sex/{{cohort}}.log"
+        sexcheck=temp("temp/{cohort}/sexcheck.txt"),
+    log: "logs/check-sex/{cohort}.log"
     shell:
         """
         outdir=act-plink-check-sex-{wildcards.cohort}
@@ -27,83 +38,86 @@ rule check_sex:
         """
 
 use rule parse_sexcheck from serpent as serpent_parse_sexcheck with:
-    container: SHINY_VERSE_IMG
+    container: config["images"]["shiny_verse"]
     input:
         sexcheck=rules.check_sex.output.sexcheck
     output:
-        sexcheck=f"{TEMPDIR}/{{cohort}}/sexcheck.rds",
-        ok=f"{TEMPDIR}/{{cohort}}/pass_sexcheck.rds",
-        fail=f"{TEMPDIR}/{{cohort}}/fail_sexcheck.rds",
-        summary=f"{TEMPDIR}/{{cohort}}/sexcheck_summary.txt",
-    log: f"{LOGDIR}/{{cohort}}/parse_sexcheck.log"
-    container: SHINY_VERSE_IMG
+        sexcheck="temp/{cohort}/sexcheck.rds",
+        ok="temp/{cohort}/pass_sexcheck.rds",
+        fail="temp/{cohort}/fail_sexcheck.rds",
+        summary="temp/{cohort}/sexcheck_summary.txt",
+    log: "logs/{cohort}/parse_sexcheck.log"
+    container: config["images"]["shiny_verse"]
 
+M_VCF_OUT_PFX = f"{config["outdir"]["act"]["process_vcf"]}/results/vcf/chr{{chromosome}}_filtered.vcf.gz"
 rule get_ids:
-    container: BCFTOOLS_IMG
-    input: M_VCF_OUT_PFX
-    output: temp(f"{RESDIR}/typed_ids/chr{{chromosome}}_typed_ids.txt"),
-    log: f"{LOGDIR}/get_ids/{{chromosome}}.log"
+    container: config["images"]["bcftools"]
+    input:
+        vcf=M_VCF_OUT_PFX,
+        tbi=f"{M_VCF_OUT_PFX}.tbi"
+    output: temp("results/typed_ids/chr{chromosome}_typed_ids.txt"),
+    log: "logs/get_ids/{chromosome}.log"
     shell:
         """
         bcftools query -l {input} > {output} 2> {log}
         """
 
 rule combine_ids:
-    input: expand(rules.get_ids.output, cohort=COHORTS, chromosome=CHROMOSOMES)
-    output: f"{RESDIR}/typed_ids.txt"
-    log: f"{LOGDIR}/combine_ids.log"
+    input: expand(rules.get_ids.output, cohort=list(BFILES.keys()), chromosome=config["CHROMOSOMES"])
+    output: "results/typed_ids.txt"
+    log: "logs/combine_ids.log"
     shell:
         """
         cat {input} > {output} 2> {log}
         """
 
 rule get_bps_samples:
-    container: SHINY_VERSE_IMG
+    container: config["images"]["shiny_verse"]
     input:
-        bps=f"{ACT_DATA_DIR}/act_bps.txt",
-        xwalk=f"{ACT_DATA_DIR}/ACT_ID_xwalk.csv",
+        bps="{config['data']['act']}/act_bps.txt",
+        xwalk="{config['data']['act']}/ACT_ID_xwalk.csv",
         typed_ids=rules.combine_ids.output,
     output:
-        txt=f"{RESDIR}/np_ids.txt",
-        rds=f"{RESDIR}/np_ids.rds",
-        ids_matched=f"{RESDIR}/ids_matched.csv",
-    log: f"{LOGDIR}/get_bps_samples.log"
+        txt="results/np_ids.txt",
+        rds="results/np_ids.rds",
+        ids_matched="results/ids_matched.csv",
+    log: "logs/get_bps_samples.log"
     script: "scripts/extract_ids.R"
 
 rule get_cohorts:
-    container: SHINY_VERSE_IMG
+    container: config["images"]["shiny_verse"]
     input:
         fam=lambda wildcards: f"{BFILES[wildcards.cohort]}.fam",
         np_ids=rules.get_bps_samples.output.rds,
-        var_ids=f"{RESDIR}/{{cohort}}/var_ids.rds",
+        var_ids="results/{cohort}/var_ids.rds",
     output:
-        ids=f"{RESDIR}/{{cohort}}_ids.rds",
-        hwe_ids=f"{RESDIR}/{{cohort}}_hwe_ids.rds",
-    log: f"{LOGDIR}/{{cohort}}/get_cohorts.log"
+        ids="results/{cohort}_ids.rds",
+        hwe_ids="results/{cohort}_hwe_ids.rds",
+    log: "logs/{cohort}/get_cohorts.log"
     script: "scripts/get_cohorts.R"
 
-GDS=f"{config["outdir"]["act"]["convert_gt_plink"]}/act_genotyped.gds"
+GDS=f"{config["outdir"]["act"]["convert_gt_gds"]}/act_genotyped.gds"
 rule get_var_ids:
-    container: GENESIS_IMG
+    container: config["images"]["genesis"]
     input:
         bim=lambda wildcards: f"{BFILES[wildcards.cohort]}.bim",
         gds=GDS,
     output:
-        var_ids = f"{RESDIR}/{{cohort}}/var_ids.rds"
-    log: f"{LOGDIR}/{{cohort}}/get_var_ids.log"
+        var_ids = "results/{cohort}/var_ids.rds"
+    log: "logs/{cohort}/get_var_ids.log"
     threads: 30
     script:
         "scripts/get_var_ids.R"
 
 use rule seqMissing from serpent as serpent_seqMissing with:
-    container: GENESIS_IMG
+    container: config["images"]["genesis"]
     input:
         gds_fn=GDS,
-        sample_id=f"{RESDIR}/{{cohort}}_ids.rds",
-        variant_id=f"{RESDIR}/{{cohort}}/var_ids.rds",
+        sample_id="results/{cohort}_ids.rds",
+        variant_id="results/{cohort}/var_ids.rds",
     output: 
-        f"{TEMPDIR}/{{cohort}}_ms_{{by_var}}.rds"
-    log: f"{LOGDIR}/{{cohort}}/ms_{{by_var}}.log"
+        "temp/{cohort}_ms_{by_var}.rds"
+    log: "logs/{cohort}/ms_{by_var}.log"
     params:
         seqMissing_args=lambda wildcards: {
             "per.variant": BY_VAR_MAP[wildcards.by_var],
@@ -113,25 +127,25 @@ use rule seqMissing from serpent as serpent_seqMissing with:
 
 
 use rule hwe from serpent as serpent_hwe with:
-    container: GENESIS_IMG
+    container: config["images"]["genesis"]
     input:
         gds_fn=GDS,
-        sample_id=f"{RESDIR}/{{cohort}}_hwe_ids.rds",
-    output: f"{RESDIR}/{{cohort}}_hwe.rds"
-    log: f"{LOGDIR}/{{cohort}}/hwe.log"
+        sample_id="results/{cohort}_hwe_ids.rds",
+    output: "results/{cohort}_hwe.rds"
+    log: "logs/{cohort}/hwe.log"
     params:
         seed=51,
         parallel=True,
     threads: workflow.cores
 
 use rule heterozygosity from serpent as serpent_heterozygosity with:
-    container: GENESIS_IMG
+    container: config["images"]["genesis"]
     input:
         gds_fn=GDS,
-        sample_id=f"{RESDIR}/{{cohort}}_ids.rds",
-        variant_id=f"{RESDIR}/{{cohort}}/var_ids.rds",
-    output: f"{RESDIR}/{{cohort}}_htz_{{margin}}.rds"
-    log: f"{LOGDIR}/{{cohort}}/heterozygosity_{{margin}}.log"
+        sample_id="results/{cohort}_ids.rds",
+        variant_id="results/{cohort}/var_ids.rds",
+    output: "results/{cohort}_htz_{margin}.rds"
+    log: "logs/{cohort}/heterozygosity_{margin}.log"
     params:
         heterozygosity_args=lambda wildcards: {
             "margin": MARGIN_MAP[wildcards.margin],
@@ -139,67 +153,67 @@ use rule heterozygosity from serpent as serpent_heterozygosity with:
     threads: 30
 
 use rule combine_varmet from serpent as serpent_combine_varmet with:
-    container: GENESIS_IMG
+    container: config["images"]["genesis"]
     input:
-        ms=f"{TEMPDIR}/{{cohort}}_ms_var.rds",
-        hwe=f"{RESDIR}/{{cohort}}_hwe.rds",
-        htz=f"{RESDIR}/{{cohort}}_htz_var.rds",
+        ms="temp/{cohort}_ms_var.rds",
+        hwe="results/{cohort}_hwe.rds",
+        htz="results/{cohort}_htz_var.rds",
     output:
-        var_qc=f"{RESDIR}/{{cohort}}/var_qc.rds"
-    log: f"{LOGDIR}/{{cohort}}/combine_varmet.log"
+        var_qc="results/{cohort}/var_qc.rds"
+    log: "logs/{cohort}/combine_varmet.log"
 
 rule sample_qc:
-    container: SHINY_VERSE_IMG
+    container: config["images"]["shiny_verse"]
     input:
-        samp_ms=expand(f"{TEMPDIR}/{{cohort}}_ms_samp.rds", cohort=COHORTS),
-        sexcheck=expand(f"{TEMPDIR}/{{cohort}}/sexcheck.rds", cohort=COHORTS),
-        samp_htz=expand(f"{RESDIR}/{{cohort}}_htz_samp.rds", cohort=COHORTS),
-        np_ids=f"{RESDIR}/np_ids.rds",
+        samp_ms=expand("temp/{cohort}_ms_samp.rds", cohort=list(BFILES.keys())),
+        sexcheck=expand("temp/{cohort}/sexcheck.rds", cohort=list(BFILES.keys())),
+        samp_htz=expand("results/{cohort}_htz_samp.rds", cohort=list(BFILES.keys())),
+        np_ids="results/np_ids.rds",
     output:
-        keep=f"{RESDIR}/samples_pass_qc.rds",
-        sampmet=f"{RESDIR}/sample_metrics.rds",
+        keep="results/samples_pass_qc.rds",
+        sampmet="results/sample_metrics.rds",
     params:
-        cohorts=COHORTS,
+        cohorts=list(BFILES.keys()),
         samp_ms = 0.1,
         htz_sd = 3,
-    log: f"{LOGDIR}/sample_qc.log"
+    log: "logs/sample_qc.log"
     script: "scripts/sample_qc.R"
 
 rule variant_qc:
-    container: SHINY_VERSE_IMG
+    container: config["images"]["shiny_verse"]
     input:
-        var_qc=f"{RESDIR}/{{cohort}}/var_qc.rds",
+        var_qc="results/{cohort}/var_qc.rds",
     output:
-        varmet=f"{RESDIR}/{{cohort}}/variant_metrics.rds",
-        keep=f"{RESDIR}/{{cohort}}/variants_pass_qc.rds",
-    log: f"{LOGDIR}/{{cohort}}/variant_qc.log"
+        varmet="results/{cohort}/variant_metrics.rds",
+        keep="results/{cohort}/variants_pass_qc.rds",
+    log: "logs/{cohort}/variant_qc.log"
     params:
         var_ms = 0.01,
         hwe_p = 1e-4,
     script: "scripts/variant_qc.R"
 
 rule parse_varmet:
-    container: SHINY_VERSE_IMG
+    container: config["images"]["shiny_verse"]
     input:
-        varmet=expand(f"{RESDIR}/{{cohort}}/variant_metrics.rds", cohort=COHORTS),
-        sampmet=f"{RESDIR}/sample_metrics.rds",
+        varmet=expand("results/{cohort}/variant_metrics.rds", cohort=list(BFILES.keys())),
+        sampmet="results/sample_metrics.rds",
     output:
-        varmet=f"{RESDIR}/variant_metrics_combined.rds",
-        keep=f"{RESDIR}/variants_pass_qc.rds",
-    log: f"{LOGDIR}/parse_varmet.log"
+        varmet="results/variant_metrics_combined.rds",
+        keep="results/variants_pass_qc.rds",
+    log: "logs/parse_varmet.log"
     params:
-        cohort=COHORTS,
+        cohort=list(BFILES.keys()),
     script: "scripts/parse_varmet.R"
 
 rule qc_report:
-    container: SHINY_VERSE_IMG
+    container: config["images"]["shiny_verse"]
     input:
-        sampmet=f"{RESDIR}/sample_metrics.rds",
-        samp_keep=f"{RESDIR}/samples_pass_qc.rds",
-        varmet=f"{RESDIR}/variant_metrics_combined.rds",
-        var_keep=f"{RESDIR}/variants_pass_qc.rds",
+        sampmet="results/sample_metrics.rds",
+        samp_keep="results/samples_pass_qc.rds",
+        varmet="results/variant_metrics_combined.rds",
+        var_keep="results/variants_pass_qc.rds",
     output:
         html="notebooks/act_qc_report.html",
     params:
-        cohorts=COHORTS,
+        cohorts=list(BFILES.keys()),
     script: "scripts/qc_report.Rmd"
