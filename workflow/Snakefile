@@ -1,7 +1,7 @@
 module serpent:
     snakefile: "/home/jb/development/serpent/workflow/Snakefile"
 
-BFILES={k: f"{config['data']['act']}/{k}/CleanedGenotypes/{v}" for k, v in config["bfiles"].items()}
+BFILES={k: f"data/act/{k}/CleanedGenotypes/{v}" for k, v in config["bfiles"].items()}
 MARGIN_MAP = {
     "var": "by.variant",
     "samp": "by.sample"
