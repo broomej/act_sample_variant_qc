@@ -2,6 +2,10 @@ module serpent:
     snakefile: "/home/jb/development/serpent/workflow/Snakefile"
 
 OUTDIR = config["outdir"]["act"]["sample_variant_qc"]
+
+rule all:
+    input: f"{OUTDIR}/notebooks/act_qc_report.html",
+
 BFILES={k: f"/container/act/{k}/CleanedGenotypes/{v}" for k, v in config["bfiles"].items()}
 MARGIN_MAP = {
     "var": "by.variant",
