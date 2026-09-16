@@ -1,7 +1,7 @@
 module serpent:
     snakefile: "/home/jb/development/serpent/workflow/Snakefile"
 
-OUTDIR = config["outdir"]["act"]["sample_variant_qc"]
+OUTDIR = config["act"]["outdir"]["sample_variant_qc"]
 
 rule all:
     input: f"{OUTDIR}/notebooks/act_qc_report.html",
@@ -58,7 +58,7 @@ use rule parse_sexcheck from serpent as serpent_parse_sexcheck with:
     log: f"{OUTDIR}/logs/{{cohort}}/parse_sexcheck.log"
     container: config["images"]["shiny_verse"]
 
-M_VCF_OUT_PFX = f"{config["outdir"]["act"]["process_vcf"]}/results/vcf/chr{{chromosome}}_filtered.vcf.gz"
+M_VCF_OUT_PFX = f"{config["act"]["outdir"]["process_vcf"]}/results/vcf/chr{{chromosome}}_filtered.vcf.gz"
 rule get_ids:
     container: config["images"]["bcftools"]
     input:
@@ -105,7 +105,7 @@ rule get_cohorts:
     log: f"{OUTDIR}/logs/{{cohort}}/get_cohorts.log"
     script: "scripts/get_cohorts.R"
 
-GDS=f"{config['outdir']['act']['convert_gt_gds']}/results/act_genotyped.gds"
+GDS=f"{config['act']['outdir']['convert_gt_gds']}/results/act_genotyped.gds"
 rule get_var_ids:
     container: config["images"]["genesis"]
     input:
