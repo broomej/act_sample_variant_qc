@@ -7,6 +7,10 @@ rule all:
     input: f"{OUTDIR}/notebooks/act_qc_report.html",
 
 BFILES={k: f"/container/act/{k}/CleanedGenotypes/{v}" for k, v in config["act"]["bfiles"].items()}
+
+# serpent inherits argument notation from the functions it imports. Some use
+# by_sample = c(TRUE, FALSE), some use margin = c("by.variant", "by.sample").
+# Create a dictionary that maps the two.
 MARGIN_MAP = {
     "var": "by.variant",
     "samp": "by.sample"
@@ -134,7 +138,6 @@ use rule seqMissing from serpent as serpent_seqMissing with:
         }
     threads: 30
 
-
 use rule hwe from serpent as serpent_hwe with:
     container: config["images"]["genesis"]
     input:
@@ -197,8 +200,8 @@ rule variant_qc:
         keep=f"{OUTDIR}/results/{{cohort}}/variants_pass_qc.rds",
     log: f"{OUTDIR}/logs/{{cohort}}/variant_qc.log"
     params:
-        var_ms = 0.01,
-        hwe_p = 1e-4,
+        var_ms = config["params"]["variant_qc"]["missing_rate"],
+        hwe_p = config["params"]["variant_qc"]["hwe_p"],
     script: "scripts/variant_qc.R"
 
 rule parse_varmet:
