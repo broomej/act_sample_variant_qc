@@ -20,6 +20,7 @@ BY_VAR_MAP = {
     "var": True,
     "samp": False
 }
+
 BY_VAR = list(BY_VAR_MAP.keys())
 wildcard_constraints:
     cohort="|".join(list(BFILES.keys())),
@@ -68,7 +69,7 @@ rule get_ids:
     input:
         vcf=M_VCF_OUT_PFX,
         tbi=f"{M_VCF_OUT_PFX}.tbi"
-    output: temp(f"{OUTDIR}/results/typed_ids/chr{{chromosome}}_typed_ids.txt"),
+    output: temp(f"{OUTDIR}/results/imputed_ids/chr{{chromosome}}_imputed_ids.txt"),
     log: f"{OUTDIR}/logs/get_ids/{{chromosome}}.log"
     shell:
         """
@@ -77,7 +78,7 @@ rule get_ids:
 
 rule combine_ids:
     input: expand(rules.get_ids.output, chromosome=config["CHROMOSOMES"])
-    output: f"{OUTDIR}/results/typed_ids.txt"
+    output: f"{OUTDIR}/results/imputed_ids.txt"
     log: f"{OUTDIR}/logs/combine_ids.log"
     shell:
         """
@@ -89,7 +90,7 @@ rule get_bps_samples:
     input:
         bps="/container/act/act_bps.txt",
         xwalk="/container/act/ACT_ID_xwalk.csv",
-        typed_ids=rules.combine_ids.output,
+        imputed_ids=rules.combine_ids.output,
     output:
         txt=f"{OUTDIR}/results/np_ids.txt",
         rds=f"{OUTDIR}/results/np_ids.rds",
@@ -109,23 +110,25 @@ rule get_cohorts:
     log: f"{OUTDIR}/logs/{{cohort}}/get_cohorts.log"
     script: "scripts/get_cohorts.R"
 
-GDS=f"{config['act']['outdir']['convert_gt_gds']}/results/act_genotyped.gds"
-rule get_var_ids:
+GDS_TYPED=f"{config['act']['outdir']['convert_gt_gds']}/results/act_genotyped.gds"
+GDS_IMPUTED=f"{config['act']['outdir']['convert_vcf']}/results/act_imputed.gds"
+GDS=[GDS_TYPED, GDS_IMPUTED]
+rule get_var_ids_typed:
     container: config["images"]["genesis"]
     input:
         bim=lambda wildcards: f"{BFILES[wildcards.cohort]}.bim",
-        gds=GDS,
+        gds=GDS_TYPED,
     output:
         var_ids = f"{OUTDIR}/results/{{cohort}}/var_ids.rds"
-    log: f"{OUTDIR}/logs/{{cohort}}/get_var_ids.log"
+    log: f"{OUTDIR}/logs/{{cohort}}/get_var_ids_typed.log"
     threads: 30
     script:
-        "scripts/get_var_ids.R"
+        "scripts/get_var_ids_typed.R"
 
 use rule seqMissing from serpent as serpent_seqMissing with:
     container: config["images"]["genesis"]
     input:
-        gds_fn=GDS,
+        gds_fn=GDS_TYPED,
         sample_id=f"{OUTDIR}/results/{{cohort}}_ids.rds",
         variant_id=f"{OUTDIR}/results/{{cohort}}/var_ids.rds",
     output: 
@@ -141,7 +144,7 @@ use rule seqMissing from serpent as serpent_seqMissing with:
 use rule hwe from serpent as serpent_hwe with:
     container: config["images"]["genesis"]
     input:
-        gds_fn=GDS,
+        gds_fn=GDS_TYPED,
         sample_id=f"{OUTDIR}/results/{{cohort}}_hwe_ids.rds",
     output: f"{OUTDIR}/results/{{cohort}}_hwe.rds"
     log: f"{OUTDIR}/logs/{{cohort}}/hwe.log"
@@ -153,7 +156,7 @@ use rule hwe from serpent as serpent_hwe with:
 use rule heterozygosity from serpent as serpent_heterozygosity with:
     container: config["images"]["genesis"]
     input:
-        gds_fn=GDS,
+        gds_fn=GDS_TYPED,
         sample_id=f"{OUTDIR}/results/{{cohort}}_ids.rds",
         variant_id=f"{OUTDIR}/results/{{cohort}}/var_ids.rds",
     output: f"{OUTDIR}/results/{{cohort}}_htz_{{margin}}.rds"

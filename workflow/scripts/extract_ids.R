@@ -30,8 +30,8 @@ if (!any(dup_ids %in% xwalk$ACT_ID)) {
     stop("Too many rows were removed from the xwalk when attempting to remove duplicates")
 }
 
-typed_ids <- readLines(input$typed_ids) %>%
-    # For completion, this includes every ID an each VCF file. We'd expect the
+imputed_ids <- readLines(input$imputed_ids) %>%
+    # For completion, this includes every ID in each VCF file. We'd expect the
     # same IDs in each VCF per cohort, but include all in case any aren't
     # in all files.
     unique() %>%
