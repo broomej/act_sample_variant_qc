@@ -47,16 +47,16 @@ imputed_ids <- readLines(input$imputed_ids) %>%
         TRUE ~ "Unknown"
     ))
 
-if (any(duplicated(typed_ids$id))) {
+if (any(duplicated(imputed_ids$id))) {
     stop("Duplicate IDs found in the genotype data.")
 }
 
-if (any(typed_ids$ID_type == "Unknown")) {
-    print(sum(typed_ids$ID_type == "Unknown"))
+if (any(imputed_ids$ID_type == "Unknown")) {
+    print(sum(imputed_ids$ID_type == "Unknown"))
     stop("Some IDs in the typed IDs file could not be classified:")
 }
 
-indno <- typed_ids %>%
+indno <- imputed_ids %>%
     filter(ID_type == "IndNo") %>%
     left_join(xwalk, by = c("IID" = "IndNo")) %>%
     mutate(IndNo = IID)
@@ -65,7 +65,7 @@ if (any(is.na(indno$ACT_ID))) {
     print(sum(is.na(indno$ACT_ID)))
 }
 
-numid <- typed_ids %>%
+numid <- imputed_ids %>%
     filter(ID_type == "NumID") %>%
     left_join(xwalk, by = c("IID" = "IndNo")) %>%
     mutate(IndNo = IID)
@@ -73,7 +73,7 @@ if (any(is.na(numid$ACT_ID))) {
     warning("Some numeric IDs could not be matched to ACT_IDs in the xwalk.")
     print(sum(is.na(numid$ACT_ID)))
 }
-actid <- filter(typed_ids, ID_type == "ACT_ID") %>%
+actid <- filter(imputed_ids, ID_type == "ACT_ID") %>%
     mutate(ACT_ID = gsub("ACT", "", IID)) %>%
     left_join(xwalk, by = "ACT_ID")
 if (any(is.na(actid$IndNo))) {
