@@ -1,10 +1,7 @@
 module serpent:
-    snakefile: "/home/jb/development/serpent/workflow/Snakefile"
+    snakefile: github("broomej/serpent", "workflow/Snakefile", tag = config["versions"]["serpent"])
 
 OUTDIR = config["act"]["outdir"]["sample_variant_qc"]
-
-rule all:
-    input: f"{OUTDIR}/notebooks/act_qc_report.html",
 
 BFILES={k: f"/container/act/{k}/CleanedGenotypes/{v}" for k, v in config["act"]["bfiles"].items()}
 COHORTS=list(BFILES.keys())
@@ -34,6 +31,9 @@ wildcard_constraints:
     margin="|".join(MARGIN),
     by_var="|".join(BY_VAR),
     gti="|".join(GTI),
+
+rule all:
+    input: expand(f"{OUTDIR}/notebooks/act_{{gti}}_qc_report.html", gti=GTI)
 
 rule check_sex:
     container: config["images"]["plink"]
@@ -71,7 +71,7 @@ use rule parse_sexcheck from serpent as serpent_parse_sexcheck with:
     log: f"{OUTDIR}/logs/{{cohort}}/parse_sexcheck.log"
     container: config["images"]["shiny_verse"]
 
-M_VCF_OUT_PFX = f"{config["act"]["outdir"]["process_vcf"]}/results/vcf/chr{{chromosome}}_filtered.vcf.gz"
+M_VCF_OUT_PFX = f"{config['act']['outdir']['process_vcf']}/results/vcf/chr{{chromosome}}_filtered.vcf.gz"
 rule get_ids:
     container: config["images"]["bcftools"]
     input:
@@ -168,8 +168,6 @@ use rule seqMissing from serpent as serpent_seqMissing with:
         }
     threads: workflow.cores
 
-# Restrict to biallelic SNVs for this step since it's so memory-
-# intensive when run on the imputed data.
 use rule hwe from serpent as serpent_hwe with:
     container: config["images"]["genesis"]
     input:
@@ -181,8 +179,7 @@ use rule hwe from serpent as serpent_hwe with:
     params:
         seed=51,
         parallel=True,
-        isSNV=True,
-        biallelic=True,
+        isSNV=False,
     benchmark: f"{OUTDIR}/benchmarks/{{cohort}}_{{gti}}_hwe.tsv"
     threads: 30
     resources:
@@ -213,28 +210,27 @@ use rule combine_varmet from serpent as serpent_combine_varmet with:
 rule sample_qc:
     container: config["images"]["shiny_verse"]
     input:
-        samp_ms=expand(f"{OUTDIR}/temp/{{cohort}}_ms_samp.rds", cohort=COHORTS),
-        sexcheck=expand(f"{OUTDIR}/temp/{{cohort}}/sexcheck.rds", cohort=COHORTS),
-        samp_htz=expand(f"{OUTDIR}/results/{{cohort}}_htz_samp.rds", cohort=COHORTS),
+        samp_ms=f"{OUTDIR}/temp/{{gti}}/{{cohort}}_ms_samp.rds",
+        sexcheck=f"{OUTDIR}/temp/{{cohort}}/sexcheck.rds",
+        samp_htz=f"{OUTDIR}/results/{{gti}}/{{cohort}}_htz_samp.rds",
         np_ids=f"{OUTDIR}/results/np_ids.rds",
     output:
-        keep=f"{OUTDIR}/results/samples_pass_qc.rds",
-        sampmet=f"{OUTDIR}/results/sample_metrics.rds",
+        keep=f"{OUTDIR}/results/{{cohort}}/samples_pass_qc_{{gti}}.rds",
+        sampmet=f"{OUTDIR}/results/{{cohort}}/sample_metrics_{{gti}}.rds",
     params:
-        cohorts=COHORTS,
         samp_ms = 0.1,
         htz_sd = 3,
-    log: f"{OUTDIR}/logs/sample_qc.log"
+    log: f"{OUTDIR}/logs/sample_qc/{{cohort}}_{{gti}}.log"
     script: "scripts/sample_qc.R"
 
 rule variant_qc:
     container: config["images"]["shiny_verse"]
     input:
-        var_qc=f"{OUTDIR}/results/{{cohort}}/var_qc.rds",
+        var_qc=f"{OUTDIR}/results/{{gti}}/{{cohort}}/var_qc.rds"
     output:
-        varmet=f"{OUTDIR}/results/{{cohort}}/variant_metrics.rds",
-        keep=f"{OUTDIR}/results/{{cohort}}/variants_pass_qc.rds",
-    log: f"{OUTDIR}/logs/{{cohort}}/variant_qc.log"
+        varmet=f"{OUTDIR}/results/{{cohort}}/{{gti}}/variant_metrics.rds",
+        keep=f"{OUTDIR}/results/{{cohort}}/{{gti}}/variants_pass_qc.rds",
+    log: f"{OUTDIR}/logs/variant_qc/{{cohort}}_{{gti}}.log"
     params:
         var_ms = config["params"]["variant_qc"]["missing_rate"],
         hwe_p = config["params"]["variant_qc"]["hwe_p"],
@@ -243,25 +239,24 @@ rule variant_qc:
 rule parse_varmet:
     container: config["images"]["shiny_verse"]
     input:
-        varmet=expand(f"{OUTDIR}/results/{{cohort}}/variant_metrics.rds", cohort=COHORTS),
-        sampmet=f"{OUTDIR}/results/sample_metrics.rds",
+        varmet=expand(f"{OUTDIR}/results/{{cohort}}/{{gti}}/variant_metrics.rds", cohort=COHORTS, allow_missing=True),
+        sampmet=expand(f"{OUTDIR}/results/{{cohort}}/sample_metrics_{{gti}}.rds", cohort=COHORTS, allow_missing=True),
     output:
-        varmet=f"{OUTDIR}/results/variant_metrics_combined.rds",
-        keep=f"{OUTDIR}/results/variants_pass_qc.rds",
-    log: f"{OUTDIR}/logs/parse_varmet.log"
-    params:
-        cohort=COHORTS,
+        varmet=f"{OUTDIR}/results/{{gti}}/variant_metrics_combined.rds",
+        keep_all=f"{OUTDIR}/results/{{gti}}/variants_pass_qc.rds",
+        keep_nhw=f"{OUTDIR}/results/{{gti}}/variants_pass_qc_nhw.rds",
+    log: f"{OUTDIR}/logs/parse_varmet/{{gti}}.log"
     script: "scripts/parse_varmet.R"
 
 rule qc_report:
     container: config["images"]["shiny_verse"]
     input:
-        sampmet=f"{OUTDIR}/results/sample_metrics.rds",
-        samp_keep=f"{OUTDIR}/results/samples_pass_qc.rds",
-        varmet=f"{OUTDIR}/results/variant_metrics_combined.rds",
-        var_keep=f"{OUTDIR}/results/variants_pass_qc.rds",
+        samp_keep=expand(f"{OUTDIR}/results/{{cohort}}/samples_pass_qc_{{gti}}.rds", cohort=COHORTS, allow_missing=True),
+        sampmet=expand(f"{OUTDIR}/results/{{cohort}}/sample_metrics_{{gti}}.rds", cohort=COHORTS, allow_missing=True),
+        varmet=f"{OUTDIR}/results/{{gti}}/variant_metrics_combined.rds",
+        var_keep_all=f"{OUTDIR}/results/{{gti}}/variants_pass_qc.rds",
     output:
-        html=f"{OUTDIR}/notebooks/act_qc_report.html",
+        html=f"{OUTDIR}/notebooks/act_{{gti}}_qc_report.html",
     params:
         cohorts=COHORTS,
     script: "scripts/qc_report.Rmd"

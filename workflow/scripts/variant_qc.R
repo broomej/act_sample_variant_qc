@@ -13,8 +13,15 @@ var_qc <- readRDS(input$var_qc) %>%
     mutate(
         hwe_rm = p < params$hwe_p,
         ms_rm = missing_rate > params$var_ms,
-        pass = !(hwe_rm | ms_rm)
+        # Need a more complicated expression than `|` to handle NAs properly
+        pass = ifelse(is.na(hwe_rm) & is.na(ms_rm), NA, !((hwe_rm %in% TRUE) | (ms_rm %in% TRUE))),
+        cohort = snakemake@wildcards$cohort
     )
+
+
+select(var_qc, hwe_rm, ms_rm, pass) %>% table(useNA = "ifany")
+
+
 n_fail <- sum(!var_qc$pass, na.rm = TRUE)
 pass <- filter(var_qc, pass | is.na(pass))
 if (nrow(var_qc) - nrow(pass) != n_fail) {

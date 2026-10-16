@@ -11,6 +11,7 @@ output:
 ```{r library, message = FALSE}
 library(magrittr)
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 library(purrr)
 library(knitr)
@@ -20,10 +21,10 @@ cohorts <- params$cohorts
 ```
 
 ```{r data}
-sampmet <- readRDS(input$sampmet)
-samp_keep <- readRDS(input$samp_keep)
+sampmet <- map(input$sampmet, readRDS) %>% bind_rows()
+samp_keep <- map(input$samp_keep, readRDS)
 varmet <- readRDS(input$varmet)
-var_keep <- readRDS(input$var_keep)
+var_keep <- readRDS(input$var_keep_all)
 ```
 
 ## Sample QC
@@ -81,10 +82,26 @@ Summary of variants kept/excluded by missingness or HWE
 **ACT1**
 
 ```{r a1_variant_summary}
-select(varmet$ACT1, hwe_rm, ms_rm) %>% table(useNA = "ifany")
+filter(varmet, cohort == "ACT1") %>%
+    select(hwe_rm, ms_rm) %>%
+    table(useNA = "ifany")
 ```
 
 **ACT3 NHW**
+
 ```{r a3_nhw_variant_summary}
-select(varmet$ACT3_NHW, hwe_rm, ms_rm) %>% table(useNA = "ifany")
+filter(varmet, cohort == "ACT3_NHW") %>%
+    select(hwe_rm, ms_rm) %>%
+    table(useNA = "ifany")
+```
+
+Variants kept/excluded between ACT1 and ACT3 NHW
+
+```{r a1-a3-compare}
+a1 <- filter(varmet, cohort == "ACT1") %>% select(id, ACT1 = pass)
+filter(varmet, cohort == "ACT3_NHW") %>% 
+    select(id, ACT3_NHW = pass) %>%
+    full_join(a1, by = "id") %>%
+    select(-id) %>%
+    table(useNA = "ifany")
 ```
