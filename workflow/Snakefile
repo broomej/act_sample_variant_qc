@@ -33,7 +33,12 @@ wildcard_constraints:
     gti="|".join(GTI),
 
 rule all:
-    input: expand(f"{OUTDIR}/notebooks/act_{{gti}}_qc_report.html", gti=GTI)
+    input:
+        qc_report=expand(f"{OUTDIR}/notebooks/act_{{gti}}_qc_report.html", gti=GTI),
+        keep_all=f"{OUTDIR}/results/sample_include.rds",
+        keep_gwas=f"{OUTDIR}/results/sample_include_gwas.rds",
+        sampmet_typed=f"{OUTDIR}/results/sample_metrics_typed.rds",
+        sampmet_imputed=f"{OUTDIR}/results/sample_metrics_imputed.rds",
 
 rule check_sex:
     container: config["images"]["plink"]
@@ -222,6 +227,21 @@ rule sample_qc:
         htz_sd = 3,
     log: f"{OUTDIR}/logs/sample_qc/{{cohort}}_{{gti}}.log"
     script: "scripts/sample_qc.R"
+
+# We'll only include samples that pass QC for the genotyped and imputed datasets
+# because they need to pass GT QC to generate PCs and need to pass imputed QC
+# to be included in the regression
+rule sample_keep:
+    input:
+        gt=expand(f"{OUTDIR}/results/{{cohort}}/sample_metrics_typed.rds", cohort=COHORTS, allow_missing=True),
+        imputed=expand(f"{OUTDIR}/results/{{cohort}}/sample_metrics_imputed.rds", cohort=COHORTS, allow_missing=True),
+    output:
+        keep_all=f"{OUTDIR}/results/sample_include.rds",
+        keep_gwas=f"{OUTDIR}/results/sample_include_gwas.rds",
+        sampmet_typed=f"{OUTDIR}/results/sample_metrics_typed.rds",
+        sampmet_imputed=f"{OUTDIR}/results/sample_metrics_imputed.rds",
+    log: f"{OUTDIR}/logs/sample_keep.log"
+    script: "scripts/sample_keep.R"
 
 rule variant_qc:
     container: config["images"]["shiny_verse"]
