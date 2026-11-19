@@ -199,7 +199,7 @@ use rule heterozygosity from serpent as serpent_heterozygosity with:
     output: f"{OUTDIR}/results/{{gti}}/{{cohort}}_htz_samp.rds"
     log: f"{OUTDIR}/logs/{{cohort}}/{{gti}}/heterozygosity.log"
     params:
-        heterozygosity_args="by.sample"
+        heterozygosity_args={"margin": "by.sample"}
     threads: 30
 
 use rule combine_varmet from serpent as serpent_combine_varmet with:
@@ -267,6 +267,15 @@ rule parse_varmet:
         keep_nhw=f"{OUTDIR}/results/{{gti}}/variants_pass_qc_nhw.rds",
     log: f"{OUTDIR}/logs/parse_varmet/{{gti}}.log"
     script: "scripts/parse_varmet.R"
+
+VAR_EXCL=f"{OUTDIR}/results/gwas_snp_exclude.txt"
+rule format_var_ids:
+    input:
+        var_include=f"{OUTDIR}/results/imputed/variants_pass_qc_nhw.rds",
+        gds=f"{config['act']['outdir']['convert_vcf']}/results/act_imputed.gds",
+    output: VAR_EXCL
+    log: f"{OUTDIR}/logs/format_var_ids.log"
+    script: "scripts/format_var_ids.R"
 
 rule qc_report:
     container: config["images"]["shiny_verse"]
